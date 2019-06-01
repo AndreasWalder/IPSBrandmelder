@@ -2,13 +2,19 @@
 #include <driver/adc.h>
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <WiFiClient.h>
+#include <WebServer.h>
+#include <WebOTA.h>
+
+const char* host = "esp32";
 
 const char* ssid = "";
 const char* password = "";
-//Ipsymcon Server:
-const char* mqtt_server = "10.0.0.93";
+const char* mqtt_server = "";
 
-String DeviceName = "Brandmelder/Küche";
+
+//String DeviceName = "Brandmelder/Küche";
+String DeviceName = "Brandmelder/Elektroraum";
 
 #define PWDN_GPIO_NUM     -1
 #define RESET_GPIO_NUM    2
@@ -67,6 +73,8 @@ float val5 = 0;
 float val6 = 0;
 float val7 = 0;
 long lastVolt = 0;
+long lastUpload = 0;
+boolean IsUpload = false;
 
 void setup() {
 
@@ -170,6 +178,11 @@ void setup() {
   }
   Serial.println("");
   Serial.println("WiFi Verbunden");
+  
+  Serial.print("Upload bereit 'http://");
+  Serial.print(WiFi.localIP());
+  Serial.print(":82/upload");
+  Serial.println("");
 
   rssi = WiFi.RSSI();
   Serial.print("RSSI:");
@@ -207,7 +220,11 @@ void setup() {
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   Serial.println("Setup ESP32 aufwecken über Timer alle " + String(TIME_TO_SLEEP) +
   " Sekunden");
+  Serial.print("Ist UploadMode: ");
+  Serial.println(IsUpload);
   
+  // Defaults to 8080 and "/webota"
+  webota.init(82, "/upload");
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -285,6 +302,17 @@ void callback(char* topic, byte* payload, unsigned int length) {
     }      
   }
 
+
+  if (Namen == DeviceName + "/UploadStart")
+  {
+   if(Auswertung == "true") {
+      Serial.println();
+      Serial.println("UploadMode");
+      IsUpload = true;
+      Auswertung = "";
+    }      
+  }
+
   Serial.println(); 
 }
 
@@ -313,7 +341,9 @@ void reconnect() {
       String DeviceNameReset = DeviceName + "/Reset";
       client.publish((char*) DeviceNameReset.c_str(), "false", true);
       String DeviceNameSchlafen = DeviceName + "/Schlafen";
-      client.publish((char*) DeviceNameSchlafen.c_str(), "false", true);
+      client.publish((char*) DeviceNameReset.c_str(), "false", true);
+      String DeviceNameUploadStart = DeviceName + "/UploadStart";
+      client.publish((char*) DeviceNameUploadStart.c_str(), "false", true);
       
       // ... and resubscribe
       //Ankommende Meldungen über diesen Namen akzeptieren
@@ -326,6 +356,8 @@ void reconnect() {
       client.subscribe((char*) DeviceNameTest.c_str());
       client.subscribe((char*) DeviceNameReset.c_str());
       client.subscribe((char*) DeviceNameSchlafen.c_str());
+      client.subscribe((char*) DeviceNameUploadStart.c_str());
+      
       
     } else {
       Serial.print("Fehlgeschlagen, rc=");
@@ -504,8 +536,16 @@ void SetStatusToMQTT() {
       String IpAdresseStream = WiFi.localIP().toString() + ":81/stream";
       IpAdresseStream.toCharArray(charBufIpStream, 50);
       snprintf (msg, 50, charBufIpStream, value);
-      String DeviceNameIpAdresseStream = DeviceName + "/IpAdresseStream";
-      client.publish((char*) DeviceNameIpAdresseStream.c_str(), msg, true);
+      String DeviceNameStream = DeviceName + "/IpAdresseStream";
+      client.publish((char*) DeviceNameStream.c_str(), msg, true);
+
+      // Ip Adresse Upload senden 
+      char charBufIpUpload[50];
+      String IpAdresseUpload = WiFi.localIP().toString() + ":82/upload";
+      IpAdresseUpload.toCharArray(charBufIpUpload, 50);
+      snprintf (msg, 50, charBufIpUpload, value);
+      String DeviceNameUpload = DeviceName + "/Upload";
+      client.publish((char*) DeviceNameUpload.c_str(), msg, true);
 
 
        // Ip Adresse Bild senden 
@@ -572,23 +612,39 @@ void SetStatusToMQTT() {
 
 
 void loop() {
+  
 
-  WIFICheckOrRestart();
-  ReadTasterAndAlarm();
-   
+  
   long now = millis();
 
-  if (now - lastVolt > 2000) {
-    ReadVoltage();
-    lastVolt = now;
-  }
-  
   if (now - lastMsg > 8000) {
     SetStatusToMQTT();
     ++value;
     lastMsg = now;
   }
-
+   
+  if (IsUpload == true) { 
+    webota.handle();
+    if (now - lastUpload > 5000) {
+    Serial.println("UploadMode");
+    //IsUpload = false;
+    //ESP.restart();
+    lastUpload = now;
+    }
+    //Kamera abschalten
+    digitalWrite(16, LOW);
+    ReadTasterAndAlarm();
+    return;
+  }
+  
+  WIFICheckOrRestart();
+  ReadTasterAndAlarm();
+   
+  if (now - lastVolt > 2000) {
+    ReadVoltage();
+    lastVolt = now;
+  }
+  
   if (now - lastSleep > 16000) {
    if (IsWakeUpByTimer == true) {
     DeepSleep();

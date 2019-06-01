@@ -126,6 +126,7 @@ static int rgb_printf(dl_matrix3du_t *image_matrix, uint32_t color, const char *
     return len;
 }
 
+/*
 static void draw_face_boxes(dl_matrix3du_t *image_matrix, box_array_t *boxes, int face_id){
     int x, y, w, h, i;
     uint32_t color = FACE_COLOR_YELLOW;
@@ -203,6 +204,7 @@ static int run_face_recognition(dl_matrix3du_t *image_matrix, box_array_t *net_b
     dl_matrix3du_free(aligned_face);
     return matched_id;
 }
+*/
 
 static size_t jpg_encode_stream(void * arg, size_t index, const void* data, size_t len){
     jpg_chunking_t *j = (jpg_chunking_t *)arg;
@@ -277,6 +279,7 @@ static esp_err_t capture_handler(httpd_req_t *req){
 
     box_array_t *net_boxes = face_detect(image_matrix, &mtmn_config);
 
+    /*
     if (net_boxes){
         detected = true;
         if(recognition_enabled){
@@ -287,7 +290,7 @@ static esp_err_t capture_handler(httpd_req_t *req){
         free(net_boxes->landmark);
         free(net_boxes);
     }
-
+    */
     jpg_chunking_t jchunk = {req, 0};
     s = fmt2jpg_cb(out_buf, out_len, out_width, out_height, PIXFORMAT_RGB888, 90, jpg_encode_stream, &jchunk);
     dl_matrix3du_free(image_matrix);
@@ -366,23 +369,25 @@ static esp_err_t stream_handler(httpd_req_t *req){
                     } else {
                         fr_ready = esp_timer_get_time();
                         box_array_t *net_boxes = NULL;
-                        if(detection_enabled){
-                            net_boxes = face_detect(image_matrix, &mtmn_config);
-                        }
+                        //if(detection_enabled){
+                          //  net_boxes = face_detect(image_matrix, &mtmn_config);
+                        //}
                         fr_face = esp_timer_get_time();
                         fr_recognize = fr_face;
                         if (net_boxes || fb->format != PIXFORMAT_JPEG){
+                          /*
                             if(net_boxes){
                                 detected = true;
-                                if(recognition_enabled){
-                                    face_id = run_face_recognition(image_matrix, net_boxes);
-                                }
+                                //if(recognition_enabled){
+                                    //face_id = run_face_recognition(image_matrix, net_boxes);
+                                //}
                                 fr_recognize = esp_timer_get_time();
                                 draw_face_boxes(image_matrix, net_boxes, face_id);
                                 free(net_boxes->box);
                                 free(net_boxes->landmark);
                                 free(net_boxes);
                             }
+                            */
                             if(!fmt2jpg(image_matrix->item, fb->width*fb->height*3, fb->width, fb->height, PIXFORMAT_RGB888, 90, &_jpg_buf, &_jpg_buf_len)){
                                 Serial.println("fmt2jpg failed");
                                 res = ESP_FAIL;
@@ -515,7 +520,7 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     }
     else if(!strcmp(variable, "face_enroll")) is_enrolling = val;
     else if(!strcmp(variable, "face_recognize")) {
-        recognition_enabled = val;
+        recognition_enabled = 0;
         if(recognition_enabled){
             detection_enabled = val;
         }
@@ -631,7 +636,7 @@ void startCameraServer(){
     mtmn_config.o_threshold.nms = 0.4;
     mtmn_config.o_threshold.candidate_number = 1;
     
-    face_id_init(&id_list, FACE_ID_SAVE_NUMBER, ENROLL_CONFIRM_TIMES);
+    //face_id_init(&id_list, FACE_ID_SAVE_NUMBER, ENROLL_CONFIRM_TIMES);
     
     Serial.printf("Starting web server on port: '%d'\n", config.server_port);
     if (httpd_start(&camera_httpd, &config) == ESP_OK) {
